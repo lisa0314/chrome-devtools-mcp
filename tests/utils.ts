@@ -291,6 +291,10 @@ export function getMockRequest(
     fetchPostData() {
       return options.fetchPostData ?? Promise.reject();
     },
+    async content() {
+      const data = options.postData ?? (await options.fetchPostData);
+      return data === undefined ? undefined : Buffer.from(data);
+    },
     hasPostData() {
       return options.hasPostData ?? false;
     },

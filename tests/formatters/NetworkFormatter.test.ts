@@ -188,6 +188,96 @@ describe('NetworkFormatter', () => {
   });
 
   describe('toStringDetailed', () => {
+    it('saves binary request bodies without UTF-8 replacement', async () => {
+      const bytes = new Uint8Array([0, 255, 128, 10, 200, 1]);
+      const request = getMockRequest({
+        hasPostData: true,
+        postData: Buffer.from(bytes).toString(),
+      });
+      sinon.stub(request, 'content').resolves(bytes);
+      const saveFile = sinon.stub().resolves({filename: '/tmp/upload'});
+      const formatter = await NetworkFormatter.from(request, {
+        fetchData: true,
+        requestFilePath: '/tmp/upload',
+        saveFile,
+        redactNetworkHeaders: false,
+      });
+
+      sinon.assert.calledOnceWithExactly(
+        saveFile,
+        bytes,
+        '/tmp/upload',
+        '.network-request',
+      );
+      assert.strictEqual(
+        formatter.toJSONDetailed().requestBodyFilePath,
+        '/tmp/upload',
+      );
+    });
+
+    it('marks binary request bodies in inline output', async () => {
+      const bytes = new Uint8Array([0, 255, 128, 10, 200, 1]);
+      const request = getMockRequest({
+        hasPostData: true,
+        postData: Buffer.from(bytes).toString(),
+      });
+      sinon.stub(request, 'content').resolves(bytes);
+      const formatter = await NetworkFormatter.from(request, {
+        fetchData: true,
+        redactNetworkHeaders: false,
+      });
+
+      assert.strictEqual(
+        formatter.toJSONDetailed().requestBody,
+        '<binary data>',
+      );
+    });
+
+    it('preserves non-ASCII UTF-8 request bodies', async () => {
+      const text = JSON.stringify({message: '你好 🌍'});
+      const bytes = Buffer.from(text);
+      const request = getMockRequest({hasPostData: true});
+      sinon.stub(request, 'content').resolves(bytes);
+      const saveFile = sinon.stub().resolves({filename: '/tmp/text'});
+      await NetworkFormatter.from(request, {
+        fetchData: true,
+        requestFilePath: '/tmp/text',
+        saveFile,
+        redactNetworkHeaders: false,
+      });
+      sinon.assert.calledOnceWithExactly(
+        saveFile,
+        bytes,
+        '/tmp/text',
+        '.network-request',
+      );
+      const inline = await NetworkFormatter.from(request, {
+        fetchData: true,
+        redactNetworkHeaders: false,
+      });
+      assert.strictEqual(inline.toJSONDetailed().requestBody, text);
+    });
+
+    for (const body of [undefined, new Uint8Array()]) {
+      it(`does not save an unavailable or empty request body (${body?.length})`, async () => {
+        const request = getMockRequest({hasPostData: true});
+        sinon.stub(request, 'content').resolves(body);
+        const saveFile = sinon.stub();
+        const formatter = await NetworkFormatter.from(request, {
+          fetchData: true,
+          requestFilePath: '/tmp/unavailable',
+          saveFile,
+          redactNetworkHeaders: false,
+        });
+
+        sinon.assert.notCalled(saveFile);
+        assert.strictEqual(
+          formatter.toJSONDetailed().requestBody,
+          '<Request body not available anymore>',
+        );
+      });
+    }
+
     it('works with request body from fetchPostData', async () => {
       const request = getMockRequest({
         hasPostData: true,
@@ -251,6 +341,7 @@ describe('NetworkFormatter', () => {
         headers: () => ({}),
         hasPostData: () => true,
         postData: () => 'request body',
+        content: async () => Buffer.from('request body'),
         response: () => ({
           status: () => 200,
           headers: () => ({}),
@@ -296,6 +387,7 @@ describe('NetworkFormatter', () => {
         headers: () => ({}),
         hasPostData: () => true,
         postData: () => largeBody,
+        content: async () => Buffer.from(largeBody),
         response: () => ({
           status: () => 200,
           headers: () => ({}),
@@ -438,6 +530,7 @@ describe('NetworkFormatter', () => {
         headers: () => ({}),
         hasPostData: () => true,
         postData: () => 'request body',
+        content: async () => Buffer.from('request body'),
         response: () => ({
           status: () => 200,
           headers: () => ({}),
@@ -536,6 +629,7 @@ describe('NetworkFormatter', () => {
         headers: () => ({}),
         hasPostData: () => true, // Claim we have data
         postData: () => null, // But returns null
+        content: async () => undefined,
         response: () => ({
           status: () => 200,
           headers: () => ({}),
@@ -719,6 +813,7 @@ describe('NetworkFormatter', () => {
         headers: () => ({}),
         hasPostData: () => true,
         postData: () => 'request body',
+        content: async () => Buffer.from('request body'),
         response: () => ({
           status: () => 200,
           headers: () => ({}),

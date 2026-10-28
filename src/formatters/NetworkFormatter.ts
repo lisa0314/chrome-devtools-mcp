@@ -98,10 +98,9 @@ export class NetworkFormatter {
   async #loadDetailedData(): Promise<void> {
     // Load Request Body
     if (this.#request.hasPostData()) {
-      let data;
+      let data: Uint8Array | undefined;
       try {
-        data =
-          this.#request.postData() ?? (await this.#request.fetchPostData());
+        data = await this.#request.content();
       } catch {
         // Ignore parsing errors
       }
@@ -113,9 +112,9 @@ export class NetworkFormatter {
             'Unable to save the request body to a file: no saveFile callback was configured.',
           );
         }
-        if (data) {
+        if (data?.length) {
           const result = await this.#options.saveFile(
-            Buffer.from(data),
+            data,
             this.#options.requestFilePath,
             '.network-request',
           );
@@ -123,8 +122,13 @@ export class NetworkFormatter {
         } else {
           this.#requestBody = requestBodyNotAvailableMessage;
         }
-      } else if (data) {
-        this.#requestBody = getSizeLimitedString(data, BODY_CONTEXT_SIZE_LIMIT);
+      } else if (data?.length) {
+        this.#requestBody = isUtf8(data)
+          ? getSizeLimitedString(
+              Buffer.from(data).toString(),
+              BODY_CONTEXT_SIZE_LIMIT,
+            )
+          : '<binary data>';
       } else {
         this.#requestBody = requestBodyNotAvailableMessage;
       }
